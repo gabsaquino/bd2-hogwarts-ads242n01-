@@ -9,7 +9,7 @@
 
 | Nome | Matrícula | Usuário do GitHub |
 | Gabriel Aquino | 2021810 | gabsaquino |
-|  |  |  |
+
 
 ## O cenário
 
