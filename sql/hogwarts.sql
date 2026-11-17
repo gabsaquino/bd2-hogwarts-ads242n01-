@@ -807,46 +807,146 @@ SELECT 'Total de galeões nos cofres dos alunos', SUM(saldo_galeoes) FROM aluno;
 -- 7. VIEWS
 -- =====================================================================
 -- Questão 31
+CREATE VIEW vw_placar_casas AS
+SELECT nome_casa, pontos
+FROM casa
+ORDER BY pontos DESC;
 
 -- Questão 32
+CREATE VIEW vw_boletim AS
+SELECT a.nome AS aluno,
+       COALESCE(c.nome_casa, 'Sem casa') AS casa,
+       d.nome_disc AS disciplina,
+       COALESCE(p.nome, 'Sem professor') AS professor,
+       m.nota,
+       m.situacao
+FROM matricula m
+JOIN aluno a ON a.id_aluno = m.id_aluno
+JOIN disciplina d ON d.id_disc = m.id_disc
+LEFT JOIN casa c ON c.id_casa = a.id_casa
+LEFT JOIN professor p ON p.id_prof = d.id_prof;
 
 -- Questão 33
+CREATE VIEW vw_extrato_loja AS
+SELECT a.nome AS aluno,
+       p.nome_produto AS produto,
+       p.loja,
+       c.quantidade,
+       c.valor_total,
+       c.data_compra
+FROM compra c
+JOIN aluno a ON a.id_aluno = c.id_aluno
+JOIN produto p ON p.id_produto = c.id_produto;
 
 -- Questão 34
+CREATE VIEW vw_alunos_destaque AS
+SELECT a.nome AS aluno,
+       c.nome_casa AS casa,
+       ROUND(AVG(m.nota), 2) AS media
+FROM aluno a
+JOIN casa c ON c.id_casa = a.id_casa
+JOIN matricula m ON m.id_aluno = a.id_aluno
+GROUP BY a.id_aluno, a.nome, c.nome_casa
+HAVING AVG(m.nota) >= 8;
 
 -- Questão 35
+-- Subconsultas no SELECT evitam que os JOINs multipliquem as linhas (disciplinas x registros de pontos)
+CREATE VIEW vw_quadro_professores AS
+SELECT p.nome AS professor,
+       COALESCE((SELECT c.nome_casa FROM casa c WHERE c.id_casa = p.id_casa), 'Não é diretor') AS casa_dirigida,
+       (SELECT COUNT(*) FROM disciplina d WHERE d.id_prof = p.id_prof) AS qtd_disciplinas,
+       COALESCE((SELECT SUM(r.pontos) FROM registro_pontos r WHERE r.id_prof = p.id_prof), 0) AS total_pontos
+FROM professor p;
 
 -- Questão 36
+SELECT * FROM vw_placar_casas;
+SELECT * FROM vw_boletim WHERE casa = 'Corvinal';
+SELECT loja, SUM(valor_total) AS total_faturado
+FROM vw_extrato_loja
+GROUP BY loja;
+SELECT * FROM vw_alunos_destaque ORDER BY media DESC;
+SELECT * FROM vw_quadro_professores ORDER BY total_pontos DESC;
+-- Confira: vw_alunos_destaque com 5 alunos (Hermione Granger no topo, 9.60); no quadro de professores,
+-- Pomona Sprout lidera com 80 pontos e Minerva McGonagall aparece com -50
 
 -- Questão 37
--- O que mudou e por quê:
+INSERT INTO registro_pontos (id_aluno, id_prof, pontos, motivo, data_registro)
+VALUES (11, 1, 20, 'Venceu a primeira tarefa do Torneio', '2026-11-10');
+SELECT * FROM vw_placar_casas;
+-- O que mudou e por quê: a Lufa-Lufa passou de 50 para 70 pontos. A view não guarda dados: é só uma
+-- consulta salva (um SELECT sobre a tabela casa) que roda de novo a cada vez que é usada. O INSERT
+-- disparou o trigger trg_pontos_casa, que atualizou a tabela casa, e a view já mostra o dado novo.
 
 -- Questão 38
+CREATE OR REPLACE VIEW vw_placar_casas AS
+SELECT nome_casa, fundador, pontos
+FROM casa
+ORDER BY pontos DESC;
+SELECT * FROM vw_placar_casas;
 
 
 -- =====================================================================
 -- 8. CONTROLE DE ACESSO (DCL)
 -- =====================================================================
 -- Questão 39
+CREATE USER 'filch'@'localhost' IDENTIFIED BY 'MadameNorra#1';
+CREATE USER 'mcgonagall'@'localhost' IDENTIFIED BY 'Animago#Gato1';
+CREATE USER 'dumbledore'@'localhost' IDENTIFIED BY 'Fenix#Fawkes1';
 
 -- Questão 40
+GRANT SELECT ON hogwarts.vw_placar_casas TO 'filch'@'localhost';
 
 -- Questão 41
+GRANT SELECT, INSERT ON hogwarts.registro_pontos TO 'mcgonagall'@'localhost';
+GRANT SELECT ON hogwarts.aluno TO 'mcgonagall'@'localhost';
+GRANT SELECT ON hogwarts.vw_boletim TO 'mcgonagall'@'localhost';
 
 -- Questão 42
+GRANT ALL PRIVILEGES ON hogwarts.* TO 'dumbledore'@'localhost' WITH GRANT OPTION;
 
 -- Questão 43
+SHOW GRANTS FOR 'filch'@'localhost';
+SHOW GRANTS FOR 'mcgonagall'@'localhost';
 
 -- Questão 44
+-- Executados em uma nova conexão no Workbench, logado como filch (não dá para trocar de usuário
+-- dentro do script, por isso os comandos ficam comentados):
+-- SELECT * FROM vw_placar_casas;
+-- SELECT * FROM aluno;
 -- Resultado de cada comando:
+--   SELECT * FROM vw_placar_casas: funcionou e devolveu o placar das casas.
+--   SELECT * FROM aluno: Error Code: 1142. SELECT command denied to user 'filch'@'localhost' for table 'aluno'
 
 -- Questão 45
--- Como o trigger conseguiu atualizar a casa:
+-- (a) Na prática, este INSERT é executado na conexão da mcgonagall. Aqui ele roda com o usuário atual do
+--     script (o mesmo efeito no placar). Se você já o executou pela conexão dela, não repita.
+INSERT INTO registro_pontos (id_aluno, id_prof, pontos, motivo, data_registro)
+VALUES (2, 1, 10, 'Ajudou um colega em Transfiguração', '2026-11-10');
+-- (b) Executado na conexão da mcgonagall (negado):
+-- UPDATE casa SET pontos = 1000 WHERE id_casa = 1;
+-- Erro: Error Code: 1142. UPDATE command denied to user 'mcgonagall'@'localhost' for table 'casa'
+-- Confira: depois do (a), a Grifinória tem 110 pontos
+SELECT nome_casa, pontos FROM casa WHERE id_casa = 1;
+-- Como o trigger conseguiu atualizar a casa: o trigger trg_pontos_casa executa com os privilégios de quem
+-- o criou (o DEFINER, aqui o administrador do banco), e não com os de quem disparou o INSERT. A McGonagall
+-- só precisa de INSERT em registro_pontos; o UPDATE em casa é feito pelo trigger com a permissão do criador.
 
 -- Questão 46
+REVOKE INSERT ON hogwarts.registro_pontos FROM 'mcgonagall'@'localhost';
+SHOW GRANTS FOR 'mcgonagall'@'localhost';
 
 -- Questão 47
--- Vantagem dos papéis:
+CREATE ROLE 'monitor';
+GRANT SELECT ON hogwarts.vw_boletim TO 'monitor';
+GRANT SELECT ON hogwarts.vw_placar_casas TO 'monitor';
+CREATE USER 'percy'@'localhost' IDENTIFIED BY 'Monitor#Chefe1';
+GRANT 'monitor' TO 'percy'@'localhost';
+SET DEFAULT ROLE 'monitor' TO 'percy'@'localhost';
+-- Vantagem dos papéis: as permissões são definidas uma única vez no papel e depois atribuídas a cada
+-- monitor com um só GRANT. Se a lista de permissões mudar, altera-se apenas o papel e todos os
+-- monitores acompanham, em vez de repetir GRANT e REVOKE para cada usuário.
 
 -- Questão 48
+DROP USER 'filch'@'localhost', 'mcgonagall'@'localhost', 'dumbledore'@'localhost', 'percy'@'localhost';
+DROP ROLE 'monitor';
 
