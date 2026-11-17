@@ -563,72 +563,244 @@ SELECT @@autocommit;
 -- =====================================================================
 -- ---------- Nível 1: filtros e operadores especiais ----------
 
--- 6.1
+-- 6.1 Faixa salarial (BETWEEN)
+SELECT nome, salario
+FROM professor
+WHERE salario BETWEEN 6000.00 AND 9000.00
+ORDER BY salario DESC;
 
--- 6.2
+-- 6.2 Anos selecionados (IN)
+SELECT nome, ano_escolar
+FROM aluno
+WHERE ano_escolar IN (1, 4, 6, 7)
+ORDER BY ano_escolar;
 
--- 6.3
+-- 6.3 Busca por padrão (LIKE com _): o "_" representa exatamente um caractere
+SELECT nome
+FROM aluno
+WHERE nome LIKE '_a%';
 
--- 6.4
+-- 6.4 Disciplina órfã (IS NULL)
+SELECT nome_disc
+FROM disciplina
+WHERE id_prof IS NULL;
 
--- 6.5
+-- 6.5 Fora da faixa (NOT BETWEEN)
+SELECT nome_produto, preco
+FROM produto
+WHERE preco NOT BETWEEN 5 AND 20
+ORDER BY preco;
 
--- 6.6
+-- 6.6 Lojas do Beco Diagonal (DISTINCT)
+SELECT DISTINCT loja
+FROM produto
+ORDER BY loja;
 
 -- ---------- Nível 2: JOINs ----------
 
--- 6.7
--- Quantos alunos e por quê:
+-- 6.7 Quem é de qual casa (INNER JOIN)
+SELECT a.nome AS aluno, c.nome_casa AS casa
+FROM aluno a
+INNER JOIN casa c ON c.id_casa = a.id_casa
+ORDER BY c.nome_casa, a.nome;
+-- Quantos alunos e por quê: 12 alunos, e não 13. O Teddy Lupin ainda não passou pelo Chapéu Seletor
+-- (id_casa é NULL) e o INNER JOIN só devolve as linhas que têm correspondência nas duas tabelas.
 
--- 6.8
+-- 6.8 Todos os alunos (LEFT JOIN)
+SELECT a.nome AS aluno,
+       COALESCE(c.nome_casa, 'Aguardando o Chapéu Seletor') AS casa
+FROM aluno a
+LEFT JOIN casa c ON c.id_casa = a.id_casa
+ORDER BY a.nome;
 
--- 6.9
+-- 6.9 Professor sem turma (RIGHT JOIN)
+SELECT p.nome AS professor
+FROM disciplina d
+RIGHT JOIN professor p ON p.id_prof = d.id_prof
+WHERE d.id_disc IS NULL;
 
--- 6.10
+-- 6.10 Boletim da Grifinória (JOIN com 5 tabelas)
+-- LEFT JOIN em professor para que a disciplina sem professor (Runas Antigas) também apareça
+SELECT a.nome AS aluno,
+       d.nome_disc AS disciplina,
+       p.nome AS professor,
+       m.nota,
+       m.situacao
+FROM aluno a
+JOIN casa c ON c.id_casa = a.id_casa
+JOIN matricula m ON m.id_aluno = a.id_aluno
+JOIN disciplina d ON d.id_disc = m.id_disc
+LEFT JOIN professor p ON p.id_prof = d.id_prof
+WHERE c.nome_casa = 'Grifinória'
+ORDER BY a.nome, d.nome_disc;
 
--- 6.11
+-- 6.11 Extrato do Beco Diagonal (JOIN com 3 tabelas)
+SELECT c.id_compra AS numero_compra,
+       a.nome AS aluno,
+       p.nome_produto AS produto,
+       p.loja,
+       c.quantidade,
+       c.valor_total,
+       c.data_compra
+FROM compra c
+JOIN aluno a ON a.id_aluno = c.id_aluno
+JOIN produto p ON p.id_produto = c.id_produto
+ORDER BY c.data_compra, c.id_compra;
 
 -- ---------- Nível 3: agrupamento e agregação ----------
 
--- 6.12
+-- 6.12 Desempenho por disciplina
+SELECT d.nome_disc AS disciplina,
+       COUNT(m.id_aluno) AS qtd_alunos,
+       ROUND(AVG(m.nota), 2) AS media,
+       MAX(m.nota) AS maior_nota,
+       MIN(m.nota) AS menor_nota
+FROM disciplina d
+JOIN matricula m ON m.id_disc = d.id_disc
+GROUP BY d.id_disc, d.nome_disc
+HAVING AVG(m.nota) >= 7
+ORDER BY media DESC;
 
--- 6.13
+-- 6.13 Livro-razão da Taça
+SELECT c.nome_casa AS casa,
+       COUNT(r.id_registro) AS qtd_registros,
+       SUM(CASE WHEN r.pontos > 0 THEN r.pontos ELSE 0 END) AS pontos_ganhos,
+       SUM(CASE WHEN r.pontos < 0 THEN r.pontos ELSE 0 END) AS pontos_perdidos,
+       SUM(r.pontos) AS saldo
+FROM casa c
+JOIN aluno a ON a.id_casa = c.id_casa
+JOIN registro_pontos r ON r.id_aluno = a.id_aluno
+GROUP BY c.id_casa, c.nome_casa
+ORDER BY saldo DESC;
 
--- 6.14
+-- 6.14 Faturamento por loja
+SELECT p.loja,
+       COUNT(*) AS qtd_compras,
+       SUM(c.valor_total) AS faturamento
+FROM compra c
+JOIN produto p ON p.id_produto = c.id_produto
+GROUP BY p.loja
+HAVING SUM(c.valor_total) > 20
+ORDER BY faturamento DESC;
 
--- 6.15
+-- 6.15 Pontos por mês
+SELECT MONTH(data_registro) AS mes,
+       COUNT(*) AS qtd_registros,
+       SUM(pontos) AS total_pontos
+FROM registro_pontos
+GROUP BY MONTH(data_registro)
+ORDER BY mes;
 
--- 6.16
+-- 6.16 Professores mais ativos
+SELECT p.nome AS professor,
+       COUNT(*) AS qtd_registros,
+       SUM(r.pontos) AS total_concedido
+FROM professor p
+JOIN registro_pontos r ON r.id_prof = p.id_prof
+GROUP BY p.id_prof, p.nome
+HAVING COUNT(*) >= 2
+ORDER BY total_concedido DESC;
 
 -- ---------- Nível 4: subconsultas ----------
 
--- 6.17
+-- 6.17 Clientes da Dedosdemel (IN com subconsultas aninhadas, sem JOIN)
+SELECT nome
+FROM aluno
+WHERE id_aluno IN (SELECT id_aluno
+                   FROM compra
+                   WHERE id_produto IN (SELECT id_produto
+                                        FROM produto
+                                        WHERE loja = 'Dedosdemel'));
 
--- 6.18
+-- 6.18 Encalhados (NOT IN)
+SELECT nome_produto, estoque
+FROM produto
+WHERE id_produto NOT IN (SELECT id_produto FROM compra);
 
--- 6.19
+-- 6.19 Cofres cheios (subconsulta escalar)
+SELECT nome, saldo_galeoes
+FROM aluno
+WHERE saldo_galeoes > (SELECT AVG(saldo_galeoes) FROM aluno);
 
--- 6.20
+-- 6.20 Acima de todos (ALL)
+SELECT nome, salario
+FROM professor
+WHERE salario > ALL (SELECT salario FROM professor WHERE id_casa IS NULL);
 
--- 6.21
--- > ANY equivale a:
+-- 6.21 Mais rico que algum sonserino (ANY)
+SELECT nome, saldo_galeoes
+FROM aluno
+WHERE id_casa <> (SELECT id_casa FROM casa WHERE nome_casa = 'Sonserina')
+  AND saldo_galeoes > ANY (SELECT s.saldo_galeoes
+                           FROM aluno s
+                           WHERE s.id_casa = (SELECT id_casa FROM casa WHERE nome_casa = 'Sonserina'));
+-- > ANY equivale a: comparar com o MENOR valor da subconsulta. Basta o saldo ser maior que o de
+-- pelo menos um sonserino, e isso é o mesmo que ser maior que o menor saldo da Sonserina.
 
--- 6.22
+-- 6.22 Casas com nota máxima (EXISTS)
+SELECT c.nome_casa
+FROM casa c
+WHERE EXISTS (SELECT 1
+              FROM aluno a
+              JOIN matricula m ON m.id_aluno = a.id_aluno
+              WHERE a.id_casa = c.id_casa
+                AND m.nota = 10);
 
--- 6.23
+-- 6.23 Nunca foram ao Beco (NOT EXISTS)
+SELECT a.nome
+FROM aluno a
+WHERE NOT EXISTS (SELECT 1 FROM compra c WHERE c.id_aluno = a.id_aluno);
 
--- 6.24
+-- 6.24 Média das médias (subconsulta no FROM)
+SELECT c.nome_casa AS casa,
+       ROUND(AVG(t.media_aluno), 2) AS media_da_casa
+FROM (SELECT a.id_aluno, a.id_casa, AVG(m.nota) AS media_aluno
+      FROM aluno a
+      JOIN matricula m ON m.id_aluno = a.id_aluno
+      GROUP BY a.id_aluno, a.id_casa) t
+JOIN casa c ON c.id_casa = t.id_casa
+GROUP BY c.id_casa, c.nome_casa
+ORDER BY media_da_casa DESC;
 
 -- ---------- Nível 5: UNION ALL ----------
 
--- 6.25
+-- 6.25 Diretório de Hogwarts (UNION ALL)
+SELECT nome, 'Aluno' AS vinculo FROM aluno
+UNION ALL
+SELECT nome, 'Professor' AS vinculo FROM professor
+ORDER BY nome;
 
--- 6.26
--- Linhas com UNION ALL:
--- Linhas com UNION:
--- Explicação:
+-- 6.26 UNION x UNION ALL
+-- Primeiro com UNION ALL:
+SELECT a.nome
+FROM aluno a
+JOIN compra c ON c.id_aluno = a.id_aluno
+UNION ALL
+SELECT a.nome
+FROM aluno a
+JOIN registro_pontos r ON r.id_aluno = a.id_aluno;
+-- Agora com UNION:
+SELECT a.nome
+FROM aluno a
+JOIN compra c ON c.id_aluno = a.id_aluno
+UNION
+SELECT a.nome
+FROM aluno a
+JOIN registro_pontos r ON r.id_aluno = a.id_aluno;
+-- Linhas com UNION ALL: 27 (10 compras + 17 registros de pontos)
+-- Linhas com UNION: 12
+-- Explicação: o UNION ALL junta os dois resultados e mantém todas as linhas, inclusive as repetidas
+-- (um aluno que comprou várias vezes ou recebeu vários registros aparece várias vezes). O UNION
+-- também junta, mas depois elimina as linhas duplicadas, então cada nome aparece uma única vez.
 
--- 6.27
+-- 6.27 Painel do Diretor (UNION ALL)
+SELECT 'Total de pontos distribuídos' AS indicador, SUM(pontos) AS valor FROM registro_pontos
+UNION ALL
+SELECT 'Total de galeões gastos na loja', SUM(valor_total) FROM compra
+UNION ALL
+SELECT 'Folha salarial dos professores', SUM(salario) FROM professor
+UNION ALL
+SELECT 'Total de galeões nos cofres dos alunos', SUM(saldo_galeoes) FROM aluno;
 
 
 -- =====================================================================
